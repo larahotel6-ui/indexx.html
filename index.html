@@ -18,9 +18,11 @@
     --tile-edge: #05060a;
     --amber: #ffb100;
     --text: #e8e6e0;
+    --white: #ffffff;
     --muted: #6b7078;
     --green: #34d17c;
     --red: #ff5a4d;
+    --orange: #ff8a1f;
   }
 
   *{ box-sizing:border-box; }
@@ -45,6 +47,7 @@
     border-radius:8px;
     box-shadow: 0 40px 90px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.03);
     overflow:hidden;
+    position:relative;
   }
 
   .board-header{
@@ -113,6 +116,7 @@
     align-items:center;
     padding:20px 36px;
     border-bottom:1px solid rgba(255,255,255,.03);
+    position:relative;
   }
 
   .row-number{
@@ -129,6 +133,8 @@
     flex-wrap:wrap;
   }
 
+  /* Order-ID digits: bright white, crisp, with a slight glow so they
+     stay easy to read even on washed-out TV panels */
   .flap{
     position:relative;
     width:56px;
@@ -142,7 +148,8 @@
     font-family:'IBM Plex Mono', monospace;
     font-size:44px;
     font-weight:600;
-    color:var(--amber);
+    color:var(--white);
+    text-shadow: 0 0 6px rgba(255,255,255,.35);
     overflow:hidden;
   }
   .flap::after{
@@ -207,6 +214,22 @@
     border-bottom:1px solid var(--red);
   }
 
+  /* Full-width marker line for the newest order — stretches edge to
+     edge of the screen, not just the card, so it reads as "latest". */
+  .latest-line{
+    position:fixed;
+    left:0;
+    right:0;
+    height:3px;
+    background:linear-gradient(90deg, rgba(255,138,31,0), var(--orange) 15%, var(--orange) 85%, rgba(255,138,31,0));
+    box-shadow:0 0 14px 2px rgba(255,138,31,.65);
+    pointer-events:none;
+    z-index:50;
+    transition: top .35s ease, opacity .35s ease;
+    opacity:0;
+  }
+  .latest-line.visible{ opacity:1; }
+
   /* Large TV / display screens: scale everything up further */
   @media (min-width:1600px){
     .board{ max-width:1800px; }
@@ -254,6 +277,9 @@
   </div>
 </div>
 
+<!-- Full-width orange marker for the most recently received order -->
+<div class="latest-line" id="latestLine"></div>
+
 <script type="module">
   // ============================================================
   // FIREBASE CONFIG — replace with your own project settings
@@ -289,6 +315,7 @@
   const rowsEl = document.getElementById('rows');
   const connBanner = document.getElementById('connBanner');
   const clockEl = document.getElementById('clock');
+  const latestLine = document.getElementById('latestLine');
 
   // Live clock — purely cosmetic, not user-entered
   function tickClock(){
@@ -313,6 +340,22 @@
     return frag;
   }
 
+  // Positions the full-width orange line under whichever row was
+  // most recently added, and keeps it there as the board scrolls/resizes.
+  function positionLatestLine(rowEl){
+    if (!rowEl){
+      latestLine.classList.remove('visible');
+      return;
+    }
+    const rect = rowEl.getBoundingClientRect();
+    latestLine.style.top = (rect.bottom - 1) + 'px';
+    latestLine.classList.add('visible');
+  }
+
+  let latestRowEl = null;
+  window.addEventListener('resize', () => positionLatestLine(latestRowEl));
+  document.getElementById('rows').addEventListener('scroll', () => positionLatestLine(latestRowEl));
+
   onValue(ordersRef,
     (snapshot) => {
       connBanner.style.display = 'none';
@@ -325,6 +368,8 @@
       if (entries.length === 0) {
         rowsEl.innerHTML = '<div class="empty-state">Waiting for orders…</div>';
         knownIds = new Set();
+        latestRowEl = null;
+        positionLatestLine(null);
         return;
       }
 
@@ -332,6 +377,9 @@
       rowsEl.innerHTML = '';
 
       let rowNum = 1;
+      let newestRowEl = null;
+      let newestCreatedAt = -Infinity;
+
       entries.forEach(([id, val]) => {
         currentIds.add(id);
         const isNew = !knownIds.has(id);
@@ -356,10 +404,21 @@
         row.appendChild(statusEl);
         rowsEl.appendChild(row);
 
+        // Track whichever row has the latest createdAt timestamp —
+        // that's the one the orange line should mark.
+        const createdAt = val.createdAt || 0;
+        if (createdAt >= newestCreatedAt){
+          newestCreatedAt = createdAt;
+          newestRowEl = row;
+        }
+
         rowNum++;
       });
 
       knownIds = currentIds;
+      latestRowEl = newestRowEl;
+      // Wait a tick so layout has settled before measuring position
+      requestAnimationFrame(() => positionLatestLine(latestRowEl));
     },
     (err) => {
       connBanner.style.display = 'block';
