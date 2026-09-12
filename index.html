@@ -107,6 +107,7 @@
     max-height:70vh;
     overflow-y:auto;
     padding:10px 0;
+    scroll-behavior:smooth;
   }
 
   .rows::-webkit-scrollbar{ width:0; }
@@ -352,7 +353,15 @@
     latestLine.classList.add('visible');
   }
 
+  // Scrolls the rows panel so the newest order is fully in view —
+  // this is what keeps new numbers from landing below the fold.
+  function scrollToRow(rowEl){
+    if (!rowEl) return;
+    rowEl.scrollIntoView({ behavior:'smooth', block:'end' });
+  }
+
   let latestRowEl = null;
+  let latestOrderId = null;
   window.addEventListener('resize', () => positionLatestLine(latestRowEl));
   document.getElementById('rows').addEventListener('scroll', () => positionLatestLine(latestRowEl));
 
@@ -379,6 +388,7 @@
       let rowNum = 1;
       let newestRowEl = null;
       let newestCreatedAt = -Infinity;
+      let newestId = null;
 
       entries.forEach(([id, val]) => {
         currentIds.add(id);
@@ -410,15 +420,23 @@
         if (createdAt >= newestCreatedAt){
           newestCreatedAt = createdAt;
           newestRowEl = row;
+          newestId = id;
         }
 
         rowNum++;
       });
 
+      const arrivedNewOrder = newestId !== null && newestId !== latestOrderId;
+
       knownIds = currentIds;
       latestRowEl = newestRowEl;
-      // Wait a tick so layout has settled before measuring position
-      requestAnimationFrame(() => positionLatestLine(latestRowEl));
+      latestOrderId = newestId;
+
+      // Wait a tick so layout has settled before measuring/scrolling
+      requestAnimationFrame(() => {
+        if (arrivedNewOrder) scrollToRow(latestRowEl);
+        positionLatestLine(latestRowEl);
+      });
     },
     (err) => {
       connBanner.style.display = 'block';
